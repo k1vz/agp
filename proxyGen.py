@@ -3,7 +3,7 @@ import json
 config_file = open('config.json')
 config = json.load(config_file)
 file = open(config['interface_path'], 'r')
-file2 = open(config['output_path'], 'w')
+file2 = open(config['output_path'] + "result.dn", 'w')
 
 inComment = False
 methodNames:list[str] = list(config['relations'].keys())

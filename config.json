@@ -1,6 +1,6 @@
 {
-	"interface_path": "./List.dn",
-	"output_path": "./result.dn",
+	"interface_path": "./interface/List.dn",
+	"output_path": "./",
 	"relations": {
 		"add": {
 			"type": "impact",
