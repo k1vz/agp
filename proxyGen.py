@@ -11,6 +11,7 @@ typesSupported:list[str] = ['void', 'integer', 'decimal', 'Data', 'Data[]', 'OBJ
 functions:dict = {}
 
 enabled_methods_dict = {}
+common_methods = {}
 for relation, relation_data in config['relations'].items():
 	for method, method_data in relation_data['propagate_methods'].items():
 		if method_data.get('mode') == 'enabled':
@@ -18,9 +19,12 @@ for relation, relation_data in config['relations'].items():
 				enabled_methods_dict[method] = []
 
 			enabled_methods_dict[method].append(relation)
-			# print(relation)
 
-print(enabled_methods_dict)
+for method, relations in enabled_methods_dict.items():
+    if len(relations) > 1:
+        common_methods[method] = relations
+
+enabled_methods_dict['common_methods'] = common_methods
 
 def writeHeader(file2:TextIOWrapper, propagateMethod: str):
 	file2.write('''
@@ -449,8 +453,6 @@ while True:
 	if not line:
 		break
 
-# print(functions)
-
 for method, enabled_methods in enabled_methods_dict.items():
 	firstRun = True
 	file2 = open(config['output_path'] + "ListCP" + method + ".dn", 'w')
@@ -462,6 +464,20 @@ for method, enabled_methods in enabled_methods_dict.items():
 		elif (not function in enabled_methods) and firstRun:
 			writeEmptyFunction(file2, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'])
 			firstRun = False # avoid the method run more than once without changes
+
+	writeFooter(file2, method)
+	file2.close()
+
+for method, enabled_methods in enabled_methods['common_methods'].items():
+	file2 = open(config['output_path'] + "ListCP" + method + ".dn", 'w')
+	print(enabled_methods['common_methods'])
+
+	writeHeader(file2, method)
+	for function, functionData in functions.items():
+		if function in enabled_methods:
+			writeFunction(file2, method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
+		elif (not function in enabled_methods):
+			writeEmptyFunction(file2, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'])
 
 	writeFooter(file2, method)
 	file2.close()
