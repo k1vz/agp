@@ -1,28 +1,28 @@
+from io import TextIOWrapper
 import json
 
 config_file = open('config.json')
 config = json.load(config_file)
 file = open(config['interface_path'], 'r')
-file2 = open(config['output_path'] + "result.dn", 'w')
 
 inComment = False
 methodNames:list[str] = list(config['relations'].keys())
 typesSupported:list[str] = ['void', 'integer', 'decimal', 'Data', 'Data[]', 'OBJECT']
+functions:dict = {}
 
-enabled_methods = {}
+enabled_methods_dict = {}
 for relation, relation_data in config['relations'].items():
-    for method, method_data in relation_data['propagate_methods'].items():
-        if method_data.get('mode') == 'enabled':
-            if method not in enabled_methods:
-                enabled_methods[method] = []
+	for method, method_data in relation_data['propagate_methods'].items():
+		if method_data.get('mode') == 'enabled':
+			if method not in enabled_methods_dict:
+				enabled_methods_dict[method] = []
 
-            enabled_methods[method].append(relation)
+			enabled_methods_dict[method].append(relation)
+			# print(relation)
 
-print(enabled_methods)
+print(enabled_methods_dict)
 
-def writeHeader():
-	global file2
-	
+def writeHeader(file2:TextIOWrapper, propagateMethod: str):
 	file2.write('''
 data Param {
 	char value[]
@@ -52,7 +52,7 @@ data Int {
 
 ''')
 
-	if (len(enabled_methods['sharding']) > 0):
+	if (propagateMethod == 'sharding'):
 		file2.write("data ShardState {\n")
 		file2.write("\tInt state[]\n")
 		file2.write("}\n")
@@ -70,7 +70,7 @@ const char LOCALHOST[] = "localhost"
 component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEncoder parser,
 	net.TCPSocket, data.StringUtil strUtil, io.Output out, data.IntUtil iu,''')
 			
-	if (len(enabled_methods['sharding']) > 0):
+	if (propagateMethod == 'sharding'):
 		file2.write("hash.Multiplicative hash")
 
 	file2.write('''
@@ -79,7 +79,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	IPAddr remoteListsIps[] = null
 ''')
 
-	if (len(enabled_methods['propagate']) > 0) or (len(enabled_methods['alternate']) > 0):
+	if (propagateMethod == 'propagate' or propagateMethod == 'alternate'):
 		file2.write("\tMutex remoteListsIpsLock = new Mutex()\n")
 		file2.write("\tint pointer = 0\n")
 
@@ -109,7 +109,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 ''')
 
-	if (len(enabled_methods['propagate']) > 0) or (len(enabled_methods['alternate']) > 0):
+	if (propagateMethod == 'propagate' or propagateMethod == 'alternate'):
 		file2.write('''
 	void sendMsgToRemoteDists(char msg[]) {
 		setupRemoteDistsIPs()
@@ -166,7 +166,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 ''')
 
-	if (len(enabled_methods['propagate']) > 0) or (len(enabled_methods['alternate']) > 0):
+	if (propagateMethod == 'propagate' or propagateMethod == 'alternate'):
 		file2.write('''
 	Response connectAndSend(IPAddr addr, char content[], bool readResponse) {
 		TCPSocket remoteObj = new TCPSocket()
@@ -177,6 +177,15 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 			remoteObj.disconnect()
 		}
 		return resp
+	}
+	
+  	void makeGroupRequest(char content[]) {
+		setupRemoteListsIPs()
+	    IPAddr addr = null
+	    for (int i = 0; i < remoteListsIps.arrayLength; i++) {
+	      addr = remoteListsIps[i]
+	      asynch::connectAndSend(addr, content, true)
+	    }
 	}
 			
 	Response makeRequest(char content[]) {
@@ -193,7 +202,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 
 ''')
-	elif (len(enabled_methods['sharding']) > 0):
+	elif (propagateMethod == 'sharding'):
 		file2.write('''
 	Response makeRequestSharding(IPAddr addr, char content[], bool readResponse) {
 	TCPSocket remoteObj = new TCPSocket()
@@ -206,9 +215,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 		return resp
 	}\n\n''')
 
-def writeFooter():
-	global file2
-
+def writeFooter(file2:TextIOWrapper, propagateMethod: str):
 	file2.write('''
 	void buildFromArray(Data items[]) {
 		// TODO
@@ -232,10 +239,10 @@ def writeFooter():
 			char msg[] = new char[]("clearList!\\r\\r\\r\\r")
 			''')
 	
-	if (len(enabled_methods['propagate']) > 0) or (len(enabled_methods['alternate']) > 0):
+	if (propagateMethod == 'propagate' or propagateMethod == 'alternate'):
 		file2.write("sendMsgToRemoteDists(msg)")
 
-	elif len(enabled_methods['sharding']):
+	elif len(enabled_methods_dict['sharding']):
 	
 		file2.write('''
 			setupRemoteDistsIPs()
@@ -251,14 +258,14 @@ def writeFooter():
 	void AdaptEvents:active() {
 		if (content != null) {''')
 	
-	if (len(enabled_methods['propagate']) > 0) or (len(enabled_methods['alternate']) > 0):
+	if (propagateMethod == 'propagate' or propagateMethod == 'alternate'):
 		file2.write('''
 			char state[] = parser.jsonFromArray(content, null)
 			char msg[] = new char[]("../distributor/RemoteList.o!", state, "\\r\\r\\r\\r")
 			sendMsgToRemoteDists(msg)''')
 
 
-	if (len(enabled_methods['sharding']) > 0):
+	if (propagateMethod == 'sharding'):
 
 		file2.write('''
 			setupRemoteDistsIPs()
@@ -286,8 +293,7 @@ def writeFooter():
 	}
 }''')
 
-def writeFunction(propagateMethod:str, returnType:str, interfaceName:str, functionName:str, parameterList:list[str], numParam:int):
-	global file2
+def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, interfaceName:str, functionName:str, parameterList:list[str], numParam:int):
 	parameter = ''
 
 	for i in parameterList:
@@ -311,12 +317,16 @@ def writeFunction(propagateMethod:str, returnType:str, interfaceName:str, functi
 		file2.write("\n")		
 		
 		if propagateMethod == "sharding":
+			file2.write("\t\tsetupRemoteListsIPs()\n")
 			file2.write(f'\t\tInt num = {paramName}\n')
 			file2.write('\t\tIPAddr addr = remoteListsIps[hash.h(num.i, remoteListsIps.arrayLength)]\n')
 			file2.write('\t\tmakeRequestSharding(addr, content2, false)\n\n')
 
-		elif propagateMethod == "propagate" or propagateMethod == "alternate":
+		elif propagateMethod == "alternate":
 			file2.write('\t\tmakeRequest(content2)\n\n')
+		
+		elif propagateMethod == "propagate":
+			file2.write('\t\tmakeGroupRequest(content2)\n\n')
 
 		file2.write('\t}\n\n')
 	else:
@@ -358,8 +368,7 @@ def writeFunction(propagateMethod:str, returnType:str, interfaceName:str, functi
 		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
 		return nums\n\t}\n''')
 
-def writeEmptyFunction(returnType:str, interfaceName:str, functionName:str, parameterList:list[str]):
-	global file2
+def writeEmptyFunction(file2:TextIOWrapper, returnType:str, interfaceName:str, functionName:str, parameterList:list[str]):
 	parameter = ''
 
 	for i in parameterList:
@@ -401,20 +410,15 @@ def cleanComments(line):
 	
 	return not stripped_line.strip()
 
-writeHeader()
-
 while True:
 	line = file.readline()
 	
 	if not cleanComments(line):
 
-		firstRun = True
 		line = line.replace('\t', '')
 		line = line.replace('\n', '')
 
-		wordList = []
-		for wordItem in line.split(' '):
-			wordList.append(wordItem)
+		wordList = [wordItem for wordItem in line.split(' ')]
 
 		#interfaceName
 		if wordList[0] == 'interface':
@@ -422,6 +426,7 @@ while True:
 
 		#functions
 		if wordList[0] in typesSupported:
+
 			returnType = wordList[0]
 			functionName = wordList[1]
 			isParameter = False
@@ -434,18 +439,32 @@ while True:
 			else:
 				numParam = 0
 
-			for method, methodData in enabled_methods.items():
-				if functionName in methodData:
-					writeFunction(method, returnType, interfaceName, functionName, parameterList, numParam)
-				elif (not functionName in methodData) and firstRun:
-					writeEmptyFunction(returnType, interfaceName, functionName, parameterList)
-					firstRun = False # avoid the method run more than once without changes
+			functions[functionName] = {
+				"returnType": returnType,
+				"interfaceName": interfaceName,
+				"parameterList": parameterList,
+				"numParam": numParam
+			}
 
 	if not line:
 		break
 
-writeFooter()
+# print(functions)
+
+for method, enabled_methods in enabled_methods_dict.items():
+	firstRun = True
+	file2 = open(config['output_path'] + "ListCP" + method + ".dn", 'w')
+
+	writeHeader(file2, method)
+	for function, functionData in functions.items():
+		if function in enabled_methods:
+			writeFunction(file2, method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
+		elif (not function in enabled_methods) and firstRun:
+			writeEmptyFunction(file2, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'])
+			firstRun = False # avoid the method run more than once without changes
+
+	writeFooter(file2, method)
+	file2.close()
 
 config_file.close()
-file2.close()
 file.close()

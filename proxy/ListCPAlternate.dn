@@ -34,7 +34,7 @@ const char CLEAR_LIST[]   = "clearList"
 const char LOCALHOST[] = "localhost"
 
 component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEncoder parser,
-	net.TCPSocket, net.TCPServerSocket, data.StringUtil strUtil, io.Output out, data.IntUtil iu {
+net.TCPSocket, net.TCPServerSocket, data.StringUtil strUtil, io.Output out, data.IntUtil iu {
 
 	IPAddr remoteDistsIps[] = null
 	IPAddr remoteListsIps[] = null
@@ -128,18 +128,8 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 		return resp
 	}
 
-  void makeGroupRequest(char content[]) {
-		setupRemoteListsIPs()
-	    IPAddr addr = null
-	    for (int i = 0; i < remoteListsIps.arrayLength; i++) {
-	      addr = remoteListsIps[i]
-	      asynch::connectAndSend(addr, content, true)
-	    }
-	}
-
 	Response makeRequest(char content[]) {
 		setupRemoteListsIPs()
-		Response resp = null
 		IPAddr addr = null
 		mutex(remoteListsIpsLock) {
 			if (remoteListsIps.arrayLength > 1) {
@@ -152,14 +142,13 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 
 	void List:add(Data item) {
-		//out.println("Estamos aqui!")
 		Request request = new Request()
 		request.functionName = ADD
 		request.numParams = 1
 		char requestStr[] = parser.jsonFromData(request, null)
 		char param[] = parser.jsonFromData(item, null)
 		char content2[] = new char[](requestStr, "!", param, "\r\r\r\r")
-		makeGroupRequest(content2)
+		makeRequest(content2)
 	}
 
 	void List:remove(Data item) {
@@ -225,7 +214,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 
 	void clearList() {
-		// TODO
+			// TODO
 	}
 
 	void Destructor:destroy() {
