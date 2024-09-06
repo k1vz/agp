@@ -8,23 +8,20 @@ file = open(config['interface_path'], 'r')
 inComment = False
 methodNames:list[str] = list(config['relations'].keys())
 typesSupported:list[str] = ['void', 'integer', 'decimal', 'Data', 'Data[]', 'OBJECT']
-functions:dict = {}
 
-enabled_methods_dict = {}
-common_methods = {}
-for relation, relation_data in config['relations'].items():
-	for method, method_data in relation_data['propagate_methods'].items():
-		if method_data.get('mode') == 'enabled':
-			if method not in enabled_methods_dict:
-				enabled_methods_dict[method] = []
+functions = enabled_methods_dict = common_methods = {}
 
-			enabled_methods_dict[method].append(relation)
+for method, method_data in config['relations'].items():
+	for propagation_method, propagation_method_data in method_data['propagate_methods'].items():
+		if propagation_method_data.get('mode') == 'enabled':
+			if propagation_method not in enabled_methods_dict:
+				enabled_methods_dict[propagation_method] = []
 
-for method, relations in enabled_methods_dict.items():
-    if len(relations) > 1:
-        common_methods[method] = relations
+			if method not in common_methods:
+				common_methods[method] = []
 
-enabled_methods_dict['common_methods'] = common_methods
+			enabled_methods_dict[propagation_method].append(method)
+			common_methods[method].append(propagation_method)
 
 def writeHeader(file2:TextIOWrapper, propagateMethod: str):
 	file2.write('''
@@ -185,11 +182,11 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	
   	void makeGroupRequest(char content[]) {
 		setupRemoteListsIPs()
-	    IPAddr addr = null
-	    for (int i = 0; i < remoteListsIps.arrayLength; i++) {
-	      addr = remoteListsIps[i]
-	      asynch::connectAndSend(addr, content, true)
-	    }
+		IPAddr addr = null
+		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
+		  addr = remoteListsIps[i]
+		  asynch::connectAndSend(addr, content, true)
+		}
 	}
 			
 	Response makeRequest(char content[]) {
@@ -453,33 +450,33 @@ while True:
 	if not line:
 		break
 
-for method, enabled_methods in enabled_methods_dict.items():
+for propagation_method, enabled_methods in enabled_methods_dict.items():
 	firstRun = True
-	file2 = open(config['output_path'] + "ListCP" + method + ".dn", 'w')
+	file2 = open(config['output_path'] + "ListCP" + propagation_method + ".dn", 'w')
 
-	writeHeader(file2, method)
+	writeHeader(file2, propagation_method)
 	for function, functionData in functions.items():
 		if function in enabled_methods:
-			writeFunction(file2, method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
+			writeFunction(file2, propagation_method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
 		elif (not function in enabled_methods) and firstRun:
 			writeEmptyFunction(file2, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'])
-			firstRun = False # avoid the method run more than once without changes
+			firstRun = False # avoid the propagation_method run more than once without changes
 
-	writeFooter(file2, method)
+	writeFooter(file2, propagation_method)
 	file2.close()
 
-for method, enabled_methods in enabled_methods['common_methods'].items():
-	file2 = open(config['output_path'] + "ListCP" + method + ".dn", 'w')
-	print(enabled_methods['common_methods'])
+for function, enabled_methods in common_methods.items():
+	file2 = open(config['output_path'] + "ListCP" + propagation_method + ".dn", 'w')
+	print(common_methods)
 
-	writeHeader(file2, method)
+	writeHeader(file2, propagation_method)
 	for function, functionData in functions.items():
 		if function in enabled_methods:
-			writeFunction(file2, method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
+			writeFunction(file2, propagation_method, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'], functionData['numParam'])
 		elif (not function in enabled_methods):
 			writeEmptyFunction(file2, functionData['returnType'], functionData['interfaceName'], function, functionData['parameterList'])
 
-	writeFooter(file2, method)
+	writeFooter(file2, propagation_method)
 	file2.close()
 
 config_file.close()
