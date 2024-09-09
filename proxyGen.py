@@ -1,4 +1,6 @@
 # por que no proxy Propagate o "resp" é declarado se não é utilizado? linha 142 do ListCPPropagate
+# a linha 192 do commonMethods vai dar problema? reutiliza o nome, porém o conteúdo é diferente. "Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)"
+# TODO: review writeEmptyFunction() calls
 
 from io import TextIOWrapper
 import os, json
@@ -230,7 +232,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 ''')
 
-def writeFooter(file2:TextIOWrapper, propagateMethod: str):
+def writeFooter(file2:TextIOWrapper, propagateMethod: list[str]):
 	file2.write('''
 	void buildFromArray(Data items[]) {
 		// TODO
@@ -257,7 +259,7 @@ def writeFooter(file2:TextIOWrapper, propagateMethod: str):
 	if ('propagate' in propagateMethod or 'alternate' in propagateMethod):
 		file2.write("sendMsgToRemoteDists(msg)")
 
-	elif len(enabled_methods_dict['sharding']):
+	elif ('sharding' in propagateMethod):
 	
 		file2.write('''
 			setupRemoteDistsIPs()
@@ -308,7 +310,7 @@ def writeFooter(file2:TextIOWrapper, propagateMethod: str):
 	}
 }''')
 
-def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, interfaceName:str, functionName:str, parameterList:list[str], numParam:int):
+def writeFunction(file2:TextIOWrapper, propagateMethod: list[str], returnType:str, interfaceName:str, functionName:str, parameterList:list[str], numParam:int):
 	parameter = ''
 
 	for i in parameterList:
@@ -329,18 +331,18 @@ def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, inte
 
 		file2.write(f'\t\tchar param[] = parser.jsonFromData({paramName}, null)\n')
 		file2.write('\t\tchar content2[] = new char[](requestStr, "!", param, "\\r\\r\\r\\r")\n')
-		file2.write("\n")		
+		file2.write("\n")
 		
-		if propagateMethod == "sharding":
+		if 'sharding' in propagateMethod:
 			file2.write("\t\tsetupRemoteListsIPs()\n")
 			file2.write(f'\t\tInt num = {paramName}\n')
 			file2.write('\t\tIPAddr addr = remoteListsIps[hash.h(num.i, remoteListsIps.arrayLength)]\n')
 			file2.write('\t\tmakeRequestSharding(addr, content2, false)\n\n')
 
-		elif propagateMethod == "alternate":
+		if 'alternate' in propagateMethod:
 			file2.write('\t\tmakeRequest(content2)\n\n')
 		
-		elif propagateMethod == "propagate":
+		if 'propagate' in propagateMethod:
 			file2.write('\t\tmakeGroupRequest(content2)\n\n')
 
 		file2.write('\t}\n\n')
@@ -349,7 +351,7 @@ def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, inte
 
 	if (functionName == 'getLength'):
 		
-		if propagateMethod == "sharding":
+		if 'sharding' in propagateMethod:
 				file2.write('''
 		int totalContents = 0
 		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
@@ -358,14 +360,28 @@ def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, inte
 		}
 		return totalContents\n\t}\n''')
 				
-		elif propagateMethod == "propagate" or propagateMethod == "alternate":
+		if 'propagate' in propagateMethod or 'alternate' in propagateMethod:
 				file2.write('''
 		Response response = makeRequest(content2)
 		return iu.intFromString(response.value)\n\t}\n\n''')
 				
 	elif functionName == 'getContents':
 
-		if propagateMethod == "sharding":
+		if 'sharding' in propagateMethod and ('propagate' in propagateMethod or 'alternate' in propagateMethod):
+			file2.write('''
+		setupRemoteListsIPs()
+		Int contents[] = null
+		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
+			Response response = makeRequestSharding(remoteListsIps[i], content2, true)
+			Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
+			contents = new Int[](contents, nums)
+		}
+		Response response = makeRequest(content2)
+		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
+		
+		return contents, nums\n\t}\n''')
+
+		elif 'sharding' in propagateMethod:
 
 			file2.write('''
 		setupRemoteListsIPs()
@@ -377,7 +393,7 @@ def writeFunction(file2:TextIOWrapper, propagateMethod:str, returnType:str, inte
 		}
 		return contents\n\t}\n''')
 			
-		elif propagateMethod == "propagate" or propagateMethod == "alternate":
+		elif 'propagate' in propagateMethod or 'alternate' in propagateMethod:
 			file2.write('''
 		Response response = makeRequest(content2)
 		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
@@ -486,12 +502,14 @@ def writeCommonMethodsFile():
 	writeHeader(file2, biggestPropagationMethodList)
 
 	for function, enabled_methods in common_methods.items():
-		interfaceFunctionData = interfaceFunctions[function]
+		firstRun = True
 
-		if function in interfaceFunctions:
-			writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-		elif (not function in enabled_methods):
-			writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'])
+		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
+			if function in interfaceFunction:
+				writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
+			elif (not function in enabled_methods) and firstRun:
+				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'])
+				firstRun = False # avoid the propagation_method run more than once without changes
 
 	writeFooter(file2, propagation_method)
 	file2.close()
