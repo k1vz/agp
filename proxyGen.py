@@ -1,6 +1,5 @@
 # por que no proxy Propagate o "resp" é declarado se não é utilizado? linha 142 do ListCPPropagate
 # a linha 192 do commonMethods vai dar problema? reutiliza o nome, porém o conteúdo é diferente. "Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)"
-# TODO: review writeEmptyFunction() calls
 
 from io import TextIOWrapper
 import os, json
@@ -10,7 +9,7 @@ config = json.load(config_file)
 file = open(config['interface_path'], 'r')
 
 if not os.path.exists("result/"): 
-    os.makedirs("result/") 
+    os.makedirs("result/")
 
 inComment = False
 methodNames:list[str] = list(config['relations'].keys())
@@ -411,7 +410,7 @@ def writeEmptyFunction(file2:TextIOWrapper, returnType:str, interfaceName:str, f
 	file2.write(f"\t{returnType} {interfaceName}:{functionName} ({parameter}) {{\n")
 	if returnType == 'bool':
 		file2.write('\t\treturn false\n\t}\n\n')
-	elif returnType == 'Data':
+	elif returnType == 'Data' or returnType == 'Data[]':
 		file2.write('\t\treturn null\n\t}\n\n')
 	else:
 		file2.write('\t}\n\n')
@@ -482,14 +481,14 @@ while True:
 
 def writeNormalFiles():
 	for propagation_method, enabled_methods in enabled_methods_dict.items():
-		firstRun = True
 		file2 = open(config['output_path'] + "ListCP" + propagation_method + ".dn", 'w')
 
 		writeHeader(file2, propagation_method.split())
 		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
+			firstRun = True
 			if interfaceFunction in enabled_methods:
 				writeFunction(file2, propagation_method, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-			elif (not interfaceFunction in enabled_methods) and firstRun:
+			elif firstRun:
 				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'])
 				firstRun = False # avoid the propagation_method run more than once without changes
 
@@ -502,12 +501,13 @@ def writeCommonMethodsFile():
 	writeHeader(file2, biggestPropagationMethodList)
 
 	for function, enabled_methods in common_methods.items():
-		firstRun = True
 
 		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
+			firstRun = True
+
 			if function in interfaceFunction:
 				writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-			elif (not function in enabled_methods) and firstRun:
+			elif firstRun:
 				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'])
 				firstRun = False # avoid the propagation_method run more than once without changes
 

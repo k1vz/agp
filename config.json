@@ -61,7 +61,7 @@
 					"op": "cross_sharding"
 				},
 				"propagate": {
-					"mode": "enabled"
+					"mode": "disabled"
 				},
 				"alternate": {
 					"mode": "enabled"
