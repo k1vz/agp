@@ -450,11 +450,9 @@ while True:
 
 		wordList = [wordItem for wordItem in line.split(' ')]
 
-		#interfaceName
 		if wordList[0] == 'interface':
 			interfaceName = wordList[1]
 
-		#functions
 		if wordList[0] in typesSupported:
 
 			returnType = wordList[0]
@@ -485,34 +483,29 @@ def writeNormalFiles():
 
 		writeHeader(file2, propagation_method.split())
 		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
-			firstRun = True
 			if interfaceFunction in enabled_methods:
 				writeFunction(file2, propagation_method, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-			elif firstRun:
+			else:
 				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'])
-				firstRun = False # avoid the propagation_method run more than once without changes
 
 		writeFooter(file2, propagation_method)
 		file2.close()
 
 def writeCommonMethodsFile():
-	file2 = open(config['output_path'] + "ListCPcommonMethods.dn", 'w')
-	_, biggestPropagationMethodList = max(common_methods.items(), key=lambda item: len(item[1])) 
-	writeHeader(file2, biggestPropagationMethodList)
+    file2 = open(config['output_path'] + "ListCPcommonMethods.dn", 'w')
 
-	for function, enabled_methods in common_methods.items():
+    _, biggestPropagationMethodList = max(common_methods.items(), key=lambda item: len(item[1])) 
+    writeHeader(file2, biggestPropagationMethodList)
 
-		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
-			firstRun = True
+    for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
+        if interfaceFunction in common_methods:
+            enabled_methods = common_methods[interfaceFunction]
+            writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
+        else:
+            writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'])
 
-			if function in interfaceFunction:
-				writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-			elif firstRun:
-				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], function, interfaceFunctionData['parameterList'])
-				firstRun = False # avoid the propagation_method run more than once without changes
-
-	writeFooter(file2, propagation_method)
-	file2.close()
+    writeFooter(file2, biggestPropagationMethodList)
+    file2.close()
 
 writeNormalFiles()
 writeCommonMethodsFile()
