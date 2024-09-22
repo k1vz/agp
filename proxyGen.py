@@ -1,35 +1,73 @@
-# por que no proxy Propagate o "resp" é declarado se não é utilizado? linha 142 do ListCPPropagate
-# a linha 192 do commonMethods vai dar problema? reutiliza o nome, porém o conteúdo é diferente. "Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)"
-
 from io import TextIOWrapper
 import os, json
 
 config_file = open('config.json')
 config = json.load(config_file)
-file = open(config['interface_path'], 'r')
 
-if not os.path.exists("result/"): 
-    os.makedirs("result/")
+if not os.path.exists(config['output_path']): 
+	os.makedirs(config['output_path'])
 
-inComment = False
-methodNames:list[str] = list(config['relations'].keys())
-typesSupported:list[str] = ['void', 'integer', 'decimal', 'Data', 'Data[]', 'OBJECT']
+methods_with_impact = [method for method, method_data in config['relations'].items() if method_data['impact'] == "true"]
+methods_without_impact = [method for method, method_data in config['relations'].items() if method_data['impact'] == "false"]
 
 interfaceFunctions = {}
-enabled_methods_dict = {}
-common_methods = {}
 
-for method, method_data in config['relations'].items():
-	for propagation_method, propagation_method_data in method_data['propagate_methods'].items():
-		if propagation_method_data.get('mode') == 'enabled':
-			if propagation_method not in enabled_methods_dict:
-				enabled_methods_dict[propagation_method] = []
+def cleanComments(line):
+	global inComment
+	stripped_line = line.strip()
 
-			if method not in common_methods:
-				common_methods[method] = []
+	if not stripped_line:
+		return True
+	
+	if stripped_line.startswith('//'):
+		return True
+	
+	if stripped_line.startswith('/*') and stripped_line.endswith('*/'):
+		return True
+	
+	if '/*' in stripped_line:
+		inComment = True
 
-			enabled_methods_dict[propagation_method].append(method)
-			common_methods[method].append(propagation_method)
+	if '*/' in stripped_line:
+		inComment = False
+		return True
+
+	if inComment:
+		return True
+	
+	return not stripped_line.strip()
+
+def readInterfaceFile():
+	interfaceFile = open(config['interface_path'], 'r')
+	dataTypes = ['void', 'int', 'Data', 'Data[]', 'bool']
+	interfaceName = ''
+
+	while True:
+		line = interfaceFile.readline()
+		if not line:
+			break
+		
+		if not cleanComments(line):
+			wordList = line.replace('\t', '').replace('\n', '').split(' ')
+			if wordList[0] == 'interface':
+				interfaceName = wordList[1]
+			elif wordList[0] in dataTypes:
+				returnType = wordList[0]
+				functionName = wordList[1]
+
+				parameterList = line[line.find('(') + 1:line.rfind(')')].split(',')
+				parameterList = [param.strip() for param in parameterList if param.strip()]
+
+				numParam = len([param for param in parameterList if not param.startswith("opt")])
+
+				interfaceFunctions[functionName] = {
+					"returnType": returnType,
+					"interfaceName": interfaceName,
+					"parameterList": parameterList,
+					"numParam": numParam
+				}
+
+	interfaceFile.close()
 
 def writeHeader(file2:TextIOWrapper, propagateMethod: list[str]):
 	file2.write('''data Param {
@@ -228,8 +266,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 			remoteObj.disconnect()
 		}
 		return resp
-	}
-''')
+	}\n\n''')
 
 def writeFooter(file2:TextIOWrapper, propagateMethod: list[str]):
 	file2.write('''
@@ -309,16 +346,10 @@ def writeFooter(file2:TextIOWrapper, propagateMethod: list[str]):
 	}
 }''')
 
-def writeFunction(file2:TextIOWrapper, propagateMethod: list[str], returnType:str, interfaceName:str, functionName:str, parameterList:list[str], numParam:int):
-	parameter = ''
+def writeFunction(file2: TextIOWrapper, propagateMethod: str, returnType: str, interfaceName: str, functionName: str, parameterList: list[str], numParam: int):
+	parameters = ', '.join(parameterList)	
 
-	for i in parameterList:
-		if len(parameterList) > 1 and parameter == '':
-			parameter += i + ', '
-		else:
-			parameter += i
-
-	file2.write(f"\t{returnType} {interfaceName}:{functionName} ({parameter}) {{\n")
+	file2.write(f"\t{returnType} {interfaceName}:{functionName} ({parameters}) {{\n")
 	file2.write("\t\tRequest request = new Request()\n")
 	file2.write(f'\t\trequest.functionName = "{functionName}"\n')
 	file2.write(f"\t\trequest.numParams = {numParam}\n")
@@ -329,45 +360,44 @@ def writeFunction(file2:TextIOWrapper, propagateMethod: list[str], returnType:st
 		paramName = parameterList[0].split()[-1]
 
 		file2.write(f'\t\tchar param[] = parser.jsonFromData({paramName}, null)\n')
-		file2.write('\t\tchar content2[] = new char[](requestStr, "!", param, "\\r\\r\\r\\r")\n')
-		file2.write("\n")
-		
-		if 'sharding' in propagateMethod:
+		file2.write('\t\tchar content2[] = new char[](requestStr, "!", param, "\\r\\r\\r\\r")\n\n')
+		print(propagateMethod)
+
+		if propagateMethod == 'sharding':
 			file2.write("\t\tsetupRemoteListsIPs()\n")
 			file2.write(f'\t\tInt num = {paramName}\n')
 			file2.write('\t\tIPAddr addr = remoteListsIps[hash.h(num.i, remoteListsIps.arrayLength)]\n')
 			file2.write('\t\tmakeRequestSharding(addr, content2, false)\n\n')
 
-		if 'alternate' in propagateMethod:
+		elif propagateMethod == 'alternate':
 			file2.write('\t\tmakeRequest(content2)\n\n')
-		
-		if 'propagate' in propagateMethod:
-			file2.write('\t\tmakeGroupRequest(content2)\n\n')
+
+		elif propagateMethod == 'propagate':
+			file2.write('\t\tmakeGroupRequest(content2)\n')
 
 		file2.write('\t}\n\n')
+
 	else:
 		file2.write('\t\tchar content2[] = new char[](requestStr, "!", " ", "\\r\\r\\r\\r")\n')
 
-	if (functionName == 'getLength'):
-		
-		if 'sharding' in propagateMethod:
+		if functionName == 'getLength':
+			if propagateMethod == 'sharding':
 				file2.write('''
 		int totalContents = 0
 		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
 			Response response = makeRequestSharding(remoteListsIps[i], content2, true)
 			totalContents += iu.intFromString(response.value)
 		}
-		return totalContents\n\t}\n''')
-				
-		if 'propagate' in propagateMethod or 'alternate' in propagateMethod:
+		return totalContents\n\n''')
+
+			elif propagateMethod in ['propagate', 'alternate']:
 				file2.write('''
 		Response response = makeRequest(content2)
-		return iu.intFromString(response.value)\n\t}\n\n''')
-				
-	elif functionName == 'getContents':
+		return iu.intFromString(response.value)\n\n''')
 
-		if 'sharding' in propagateMethod and ('propagate' in propagateMethod or 'alternate' in propagateMethod):
-			file2.write('''
+		elif functionName == 'getContents':
+			if propagateMethod == 'sharding':
+				file2.write('''
 		setupRemoteListsIPs()
 		Int contents[] = null
 		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
@@ -375,140 +405,48 @@ def writeFunction(file2:TextIOWrapper, propagateMethod: list[str], returnType:st
 			Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
 			contents = new Int[](contents, nums)
 		}
+		return contents\n''')
+
+			elif propagateMethod == 'propagate':
+				file2.write('''
 		Response response = makeRequest(content2)
 		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-		
-		return contents, nums\n\t}\n''')
+		return nums\n''')
 
-		elif 'sharding' in propagateMethod:
-
-			file2.write('''
-		setupRemoteListsIPs()
-		Int contents[] = null
-		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
-			Response response = makeRequestSharding(remoteListsIps[i], content2, true)
-			Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-			contents = new Int[](contents, nums)
-		}
-		return contents\n\t}\n''')
-			
-		elif 'propagate' in propagateMethod or 'alternate' in propagateMethod:
-			file2.write('''
+			elif propagateMethod == 'alternate':
+				file2.write('''
 		Response response = makeRequest(content2)
 		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-		return nums\n\t}\n''')
+		return nums\n''')
 
-def writeEmptyFunction(file2:TextIOWrapper, returnType:str, interfaceName:str, functionName:str, parameterList:list[str]):
-	parameter = ''
+		file2.write('''\t}\n\n''')
 
-	for i in parameterList:
-		if len(parameterList) > 1 and parameter == '':
-			parameter += i + ', '
-		else:
-			parameter += i
+def generateProxyFiles():
+	for method_type in ["sharding", "propagate", "mixed_sharding", "mixed_propagate"]:
+		with open(f"{config['output_path']}ListCP{method_type}.dn", "w") as file2:
+			if method_type == "mixed_sharding":
+				writeHeader(file2, ["sharding", "alternate"])
+				for method in methods_with_impact:
+					writeFunction(file2, "sharding", interfaceFunctions[method]['returnType'], interfaceFunctions[method]['interfaceName'], method, interfaceFunctions[method]['parameterList'], interfaceFunctions[method]['numParam'])
+				for method in methods_without_impact:
+					writeFunction(file2, "alternate", interfaceFunctions[method]['returnType'], interfaceFunctions[method]['interfaceName'], method, interfaceFunctions[method]['parameterList'], interfaceFunctions[method]['numParam'])
+				writeFooter(file2, ["sharding", "alternate"])
 
-	file2.write(f"\t{returnType} {interfaceName}:{functionName} ({parameter}) {{\n")
-	if returnType == 'bool':
-		file2.write('\t\treturn false\n\t}\n\n')
-	elif returnType == 'Data' or returnType == 'Data[]':
-		file2.write('\t\treturn null\n\t}\n\n')
-	else:
-		file2.write('\t}\n\n')
+			elif method_type == "mixed_propagate":
+				writeHeader(file2, ["propagate", "alternate"])
+				for method in methods_with_impact:
+					writeFunction(file2, "propagate", interfaceFunctions[method]['returnType'], interfaceFunctions[method]['interfaceName'], method, interfaceFunctions[method]['parameterList'], interfaceFunctions[method]['numParam'])
+				for method in methods_without_impact:
+					writeFunction(file2, "alternate", interfaceFunctions[method]['returnType'], interfaceFunctions[method]['interfaceName'], method, interfaceFunctions[method]['parameterList'], interfaceFunctions[method]['numParam'])
+				writeFooter(file2, ["propagate", "alternate"])
 
-def cleanComments(line):
-	global inComment
-	stripped_line = line.strip()
-
-	if not stripped_line:
-		return True
-	
-	if stripped_line.startswith('//'):
-		return True
-	
-	if stripped_line.startswith('/*') and stripped_line.endswith('*/'):
-		return True
-	
-	if '/*' in stripped_line:
-		inComment = True
-
-	if '*/' in stripped_line:
-		inComment = False
-		return True
-
-	if inComment:
-		return True
-	
-	return not stripped_line.strip()
-
-while True:
-	line = file.readline()
-	
-	if not cleanComments(line):
-
-		line = line.replace('\t', '')
-		line = line.replace('\n', '')
-
-		wordList = [wordItem for wordItem in line.split(' ')]
-
-		if wordList[0] == 'interface':
-			interfaceName = wordList[1]
-
-		if wordList[0] in typesSupported:
-
-			returnType = wordList[0]
-			functionName = wordList[1]
-			isParameter = False
-
-			parameterList = line[line.find('(') + len('('):line.rfind(')')].split(',') # get the contents of the line between parentheses and split by comma
-			parameterList = [parameter.strip() for parameter in list(filter(None, parameterList))] # clean white spaces in itens and clean empty items
-
-			if (parameterList and not parameterList[0].startswith('opt')):
-				numParam = len(parameterList)
 			else:
-				numParam = 0
+				writeHeader(file2, [method_type])
+				for method in methods_with_impact + methods_without_impact:
+					writeFunction(file2, method_type, interfaceFunctions[method]['returnType'], interfaceFunctions[method]['interfaceName'], method, interfaceFunctions[method]['parameterList'], interfaceFunctions[method]['numParam'])
+				writeFooter(file2, [method_type])
 
-			interfaceFunctions[functionName] = {
-				"returnType": returnType,
-				"interfaceName": interfaceName,
-				"parameterList": parameterList,
-				"numParam": numParam
-			}
-
-	if not line:
-		break
-
-def writeNormalFiles():
-	for propagation_method, enabled_methods in enabled_methods_dict.items():
-		file2 = open(config['output_path'] + "ListCP" + propagation_method + ".dn", 'w')
-
-		writeHeader(file2, propagation_method.split())
-		for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
-			if interfaceFunction in enabled_methods:
-				writeFunction(file2, propagation_method, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-			else:
-				writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'])
-
-		writeFooter(file2, propagation_method)
-		file2.close()
-
-def writeCommonMethodsFile():
-    file2 = open(config['output_path'] + "ListCPcommonMethods.dn", 'w')
-
-    _, biggestPropagationMethodList = max(common_methods.items(), key=lambda item: len(item[1])) 
-    writeHeader(file2, biggestPropagationMethodList)
-
-    for interfaceFunction, interfaceFunctionData in interfaceFunctions.items():
-        if interfaceFunction in common_methods:
-            enabled_methods = common_methods[interfaceFunction]
-            writeFunction(file2, enabled_methods, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'], interfaceFunctionData['numParam'])
-        else:
-            writeEmptyFunction(file2, interfaceFunctionData['returnType'], interfaceFunctionData['interfaceName'], interfaceFunction, interfaceFunctionData['parameterList'])
-
-    writeFooter(file2, biggestPropagationMethodList)
-    file2.close()
-
-writeNormalFiles()
-writeCommonMethodsFile()
+readInterfaceFile()
+generateProxyFiles()
 
 config_file.close()
-file.close()

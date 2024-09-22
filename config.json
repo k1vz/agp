@@ -3,72 +3,26 @@
 	"output_path": "./result/",
 	"relations": {
 		"add": {
-			"type": "impact",
+			"impact": "true",
 			"attrs": "content",
-			"attrs_type": "collection",
-			"propagate_methods": {
-				"sharding": {
-					"mode": "enabled",
-					"key": "item.n"
-				},
-				"propagate": {
-					"mode": "enabled"
-				},
-				"alternate": {
-					"mode": "enabled"
-				}
-			}
+			"attrs_type": "collection"
 		},
 		"remove": {
-			"type": "impact",
+			"impact": "true",
 			"attrs": "content",
-			"attrs_type": "collection",
-			"propagate_methods": {
-				"sharding": {
-					"mode": "disabled",
-					"key": "item.n"
-				},
-				"propagate": {
-					"mode": "disabled"
-				},
-				"alternate": {
-					"mode": "disabled"
-				}
-			}
+			"attrs_type": "collection"
 		},
 		"getFirst": {
-			"type": "no_impact",
-			"propagate_methods": {
-				"sharding": {
-					"mode": "disabled",
-					"key": "item.n",
-					"op": "cross_sharding?? não sabemos"
-				},
-				"propagate": {
-					"mode": "disabled"
-				},
-				"alternate": {
-					"mode": "disabled"
-				}
-			}
+			"impact": "false"
+		},
+		"getLength": {
+			"impact": "false"
 		},
 		"getContents": {
-			"type": "no_impact",
-			"propagate_methods": {
-				"sharding": {
-					"mode": "enabled",
-					"key": "item.n",
-					"op": "cross_sharding"
-				},
-				"propagate": {
-					"mode": "disabled"
-				},
-				"alternate": {
-					"mode": "enabled"
-				}
-			}
+			"impact": "false"
+		},
+		"update": {
+			"impact": "true"
 		}
-
 	}
-
 }
