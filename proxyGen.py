@@ -1,71 +1,83 @@
 from io import TextIOWrapper
 import os, json, re
 
-configFile = open('config.json')
-config = json.load(configFile)
-
-if not os.path.exists(config['output_path']): 
-	os.makedirs(config['output_path'])
+try:
+	with open("config.json", "r") as configFile:
+		config = json.load(configFile)
+		
+		if not os.path.exists(config['output_path']): 
+			os.makedirs(config['output_path'])
+except FileNotFoundError:
+    print("Error: The configuration file 'config.json' was not found.")
+    exit(1)
+except json.JSONDecodeError:
+    print("Error: There was an issue with decoding the JSON from 'config.json'.")
+    exit(1)
+except KeyError as e:
+    print(f"Error: Missing expected key in the configuration file: {e}")
+    exit(1)
 
 methodsWithImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "true"]
 methodsWithoutImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "false"]
 
 insideMultilineComment = False
-interactionList = ["sharding", "propagate", "mixed_sharding", "mixed_propagate"]
+SHARDING = "sharding"
+PROPAGATE = "propagate"
+ALTERNATE = "alternate"
+MIXED_SHARDING = "mixed_sharding"
+MIXED_PROPAGATE = "mixed_propagate"
+DATA_TYPES = ['void', 'int', 'Data', 'Data[]', 'bool']
+interactionList = [SHARDING, PROPAGATE, MIXED_SHARDING, MIXED_PROPAGATE]
+
 
 def cleanLine(line: str):
 	global insideMultilineComment
 	
-	if '/*' in line and '*/' not in line:
+	if '/*' in line and '*/' in line:
+		return re.sub(r'/\*.*?\*/', '', line).strip()
+	
+	if '/*' in line:
 		insideMultilineComment = True
-		line = re.sub(r'/\*.*', '', line)
+		return re.sub(r'/\*.*', '', line).strip()
 	
 	if insideMultilineComment and '*/' in line:
 		insideMultilineComment = False
-		line = re.sub(r'.*\*/', '', line)
-		return line.strip()
+		return re.sub(r'.*\*/', '', line).strip()
 	
 	if insideMultilineComment:
 		return
 	
-	line = re.sub(r'//.*', '', line).strip()
-	line = re.sub(r'/\*.*?\*/', '', line)  
-	
-	return line
+	return re.sub(r'//.*', '', line).strip()
 
 def readInterfaceFile():
 	interfaceFunctions = {}
-	interfaceFile = open(config['interface_path'], 'r')
 	dataTypes = ['void', 'int', 'Data', 'Data[]', 'bool']
 	interfaceName = ''
 
-	while True:
-		line_raw = interfaceFile.readline()
-		if not line_raw:
-			break
-		
-		line = cleanLine(line_raw)
-		if line:
-			wordList = line.replace('\t', '').replace('\n', '').split(' ')
-			if wordList[0] == 'interface':
-				interfaceName = wordList[1]
-			elif wordList[0] in dataTypes:
-				returnType = wordList[0]
-				methodName = wordList[1]
+	with open(config['interface_path'], 'r') as interfaceFile:
+		for line_raw in interfaceFile:
+			line = cleanLine(line_raw)
+			
+			if line:
+				wordList = line.split(' ')
+				if wordList[0] == 'interface':
+					interfaceName = wordList[1]
+				elif wordList[0] in dataTypes:
+					returnType = wordList[0]
+					methodName = wordList[1]
 
-				parameterList = line[line.find('(') + 1:line.rfind(')')].split(',')
-				parameterList = [param.strip() for param in parameterList if param.strip()]
+					parameterList = line[line.find('(') + 1:line.rfind(')')].split(',')
+					parameterList = [param.strip() for param in parameterList if param.strip()]
 
-				numParam = len([param for param in parameterList if not param.startswith("opt")])
+					numParam = len([param for param in parameterList if not param.startswith("opt")])
 
-				interfaceFunctions[methodName] = {
-					"returnType": returnType,
-					"interfaceName": interfaceName,
-					"parameterList": parameterList,
-					"numParam": numParam
-				}
+					interfaceFunctions[methodName] = {
+						"returnType": returnType,
+						"interfaceName": interfaceName,
+						"parameterList": parameterList,
+						"numParam": numParam
+					}
 
-	interfaceFile.close()
 	return interfaceFunctions
 
 def writeHeader(outputFile:TextIOWrapper, interactionMethods: list[str]):
@@ -96,7 +108,7 @@ data Int {
 }
 ''')
 
-	if ('sharding' in interactionMethods):
+	if (SHARDING in interactionMethods):
 		outputFile.write("data ShardState {\n")
 		outputFile.write("\tInt state[]\n")
 		outputFile.write("}\n")
@@ -114,10 +126,10 @@ const char LOCALHOST[] = "localhost"
 component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEncoder parser,
 	net.TCPSocket, data.StringUtil strUtil, io.Output out, data.IntUtil iu, ''')
 			
-	if ('sharding' in interactionMethods):
+	if (SHARDING in interactionMethods):
 		outputFile.write("hash.Multiplicative hash")
 	
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write("net.TCPServerSocket")
 
 	outputFile.write('''
@@ -126,7 +138,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	IPAddr remoteListsIps[] = null
 ''')
 
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write("\tMutex remoteListsIpsLock = new Mutex()\n")
 		outputFile.write("\tint pointer = 0\n")
 
@@ -156,7 +168,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 ''')
 
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write('''
 	void sendMsgToRemoteDists(char msg[]) {
 		setupRemoteDistsIPs()
@@ -212,7 +224,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 		return true
 	}
 ''')
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write('''
 	Response connectAndSend(IPAddr addr, char content[], bool readResponse) {
 		TCPSocket remoteObj = new TCPSocket()
@@ -226,7 +238,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 	''')
 
-	if ('propagate' in interactionMethods):
+	if (PROPAGATE in interactionMethods):
 		outputFile.write('''
   	void makeGroupRequest(char content[]) {
 		setupRemoteListsIPs()
@@ -238,7 +250,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 	''')
 		
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write('''	  
 	Response makeRequest(char content[]) {
 		setupRemoteListsIPs()
@@ -254,7 +266,7 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 	}
 
 ''')
-	elif ('sharding' in interactionMethods):
+	elif (SHARDING in interactionMethods):
 		outputFile.write('''
 	Response makeRequestSharding(IPAddr addr, char content[], bool readResponse) {
 	TCPSocket remoteObj = new TCPSocket()
@@ -291,10 +303,10 @@ def writeFooter(outputFile:TextIOWrapper, interactionMethods: list[str]):
 			char msg[] = new char[]("clearList!\\r\\r\\r\\r")
 			''')
 	
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write("sendMsgToRemoteDists(msg)")
 
-	elif ('sharding' in interactionMethods):
+	elif (SHARDING in interactionMethods):
 	
 		outputFile.write('''
 			setupRemoteDistsIPs()
@@ -310,14 +322,14 @@ def writeFooter(outputFile:TextIOWrapper, interactionMethods: list[str]):
 	void AdaptEvents:active() {
 		if (content != null) {''')
 	
-	if ('propagate' in interactionMethods or 'alternate' in interactionMethods):
+	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write('''
 			char state[] = parser.jsonFromArray(content, null)
 			char msg[] = new char[]("../distributor/RemoteList.o!", state, "\\r\\r\\r\\r")
 			sendMsgToRemoteDists(msg)''')
 
 
-	if ('sharding' in interactionMethods):
+	if (SHARDING in interactionMethods):
 
 		outputFile.write('''
 			setupRemoteDistsIPs()
@@ -346,108 +358,104 @@ def writeFooter(outputFile:TextIOWrapper, interactionMethods: list[str]):
 }''')
 
 def writeFunction(outputFile: TextIOWrapper, interactionMethod: str, interfaceFunctionData: dict, methodName: str):
-    parameterList = interfaceFunctionData['parameterList']
-    parameters = ', '.join(parameterList)
+	parameterList = interfaceFunctionData['parameterList']
+	parameters = ', '.join(parameterList)
 
-    outputFile.write(f"\t{interfaceFunctionData['returnType']} {interfaceFunctionData['interfaceName']}:{methodName} ({parameters}) {{\n")
-    outputFile.write("\t\tRequest request = new Request()\n")
-    outputFile.write(f'\t\trequest.methodName = "{methodName}"\n')
-    outputFile.write(f"\t\trequest.numParams = {interfaceFunctionData['numParam']}\n")
-    outputFile.write("\n")
-    outputFile.write("\t\tchar requestStr[] = parser.jsonFromData(request, null)\n")
+	outputFile.write(f"\t{interfaceFunctionData['returnType']} {interfaceFunctionData['interfaceName']}:{methodName} ({parameters}) {{\n")
+	outputFile.write("\t\tRequest request = new Request()\n")
+	outputFile.write(f'\t\trequest.methodName = "{methodName}"\n')
+	outputFile.write(f"\t\trequest.numParams = {interfaceFunctionData['numParam']}\n")
+	outputFile.write("\n")
+	outputFile.write("\t\tchar requestStr[] = parser.jsonFromData(request, null)\n")
 
-    if methodName == 'add':
-        paramName = parameterList[0].split()[-1]
+	if methodName == 'add':
+		paramName = parameterList[0].split()[-1]
 
-        outputFile.write(f'\t\tchar param[] = parser.jsonFromData({paramName}, null)\n')
-        outputFile.write('\t\tchar content2[] = new char[](requestStr, "!", param, "\\r\\r\\r\\r")\n\n')
+		outputFile.write(f'\t\tchar param[] = parser.jsonFromData({paramName}, null)\n')
+		outputFile.write('\t\tchar content2[] = new char[](requestStr, "!", param, "\\r\\r\\r\\r")\n\n')
 
-        if interactionMethod == 'sharding':
-            outputFile.write("\t\tsetupRemoteListsIPs()\n")
-            outputFile.write(f'\t\tInt num = {paramName}\n')
-            outputFile.write('\t\tIPAddr addr = remoteListsIps[hash.h(num.i, remoteListsIps.arrayLength)]\n')
-            outputFile.write('\t\tmakeRequestSharding(addr, content2, false)\n\n')
+		if interactionMethod == SHARDING:
+			outputFile.write("\t\tsetupRemoteListsIPs()\n")
+			outputFile.write(f'\t\tInt num = {paramName}\n')
+			outputFile.write('\t\tIPAddr addr = remoteListsIps[hash.h(num.i, remoteListsIps.arrayLength)]\n')
+			outputFile.write('\t\tmakeRequestSharding(addr, content2, false)\n\n')
 
-        elif interactionMethod == 'alternate':
-            outputFile.write('\t\tmakeRequest(content2)\n\n')
+		elif interactionMethod == ALTERNATE:
+			outputFile.write('\t\tmakeRequest(content2)\n\n')
 
-        elif interactionMethod == 'propagate':
-            outputFile.write('\t\tmakeGroupRequest(content2)\n')
+		elif interactionMethod == PROPAGATE:
+			outputFile.write('\t\tmakeGroupRequest(content2)\n')
 
-        outputFile.write('\t}\n\n')
+		outputFile.write('\t}\n\n')
 
-    else:
-        outputFile.write('\t\tchar content2[] = new char[](requestStr, "!", " ", "\\r\\r\\r\\r")\n')
+	else:
+		outputFile.write('\t\tchar content2[] = new char[](requestStr, "!", " ", "\\r\\r\\r\\r")\n')
 
-        if methodName == 'getLength':
-            if interactionMethod == 'sharding':
-                outputFile.write('''\
-        int totalContents = 0
-        for (int i = 0; i < remoteListsIps.arrayLength; i++) {
-            Response response = makeRequestSharding(remoteListsIps[i], content2, true)
-            totalContents += iu.intFromString(response.value)
-        }
-        return totalContents\n\n''')
+		if methodName == 'getLength':
+			if interactionMethod == SHARDING:
+				outputFile.write('''\
+		int totalContents = 0
+		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
+			Response response = makeRequestSharding(remoteListsIps[i], content2, true)
+			totalContents += iu.intFromString(response.value)
+		}
+		return totalContents\n\n''')
 
-            elif interactionMethod in ['propagate', 'alternate']:
-                outputFile.write('''\
-        Response response = makeRequest(content2)
-        return iu.intFromString(response.value)\n\n''')
+			elif interactionMethod in [PROPAGATE, ALTERNATE]:
+				outputFile.write('''\
+		Response response = makeRequest(content2)
+		return iu.intFromString(response.value)\n\n''')
 
-        elif methodName == 'getContents':
-            if interactionMethod == 'sharding':
-                outputFile.write('''\
-        setupRemoteListsIPs()
-        Int contents[] = null
-        for (int i = 0; i < remoteListsIps.arrayLength; i++) {
-            Response response = makeRequestSharding(remoteListsIps[i], content2, true)
-            Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-            contents = new Int[](contents, nums)
-        }
-        return contents\n''')
+		elif methodName == 'getContents':
+			if interactionMethod == SHARDING:
+				outputFile.write('''\
+		setupRemoteListsIPs()
+		Int contents[] = null
+		for (int i = 0; i < remoteListsIps.arrayLength; i++) {
+			Response response = makeRequestSharding(remoteListsIps[i], content2, true)
+			Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
+			contents = new Int[](contents, nums)
+		}
+		return contents\n''')
 
-            elif interactionMethod == 'propagate':
-                outputFile.write('''\
-        Response response = makeRequest(content2)
-        Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-        return nums\n''')
+			elif interactionMethod == PROPAGATE:
+				outputFile.write('''\
+		Response response = makeRequest(content2)
+		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
+		return nums\n''')
 
-            elif interactionMethod == 'alternate':
-                outputFile.write('''\
-        Response response = makeRequest(content2)
-        Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
-        return nums\n''')
+			elif interactionMethod == ALTERNATE:
+				outputFile.write('''\
+		Response response = makeRequest(content2)
+		Int nums[] = parser.jsonToArray(response.value, typeof(Int[]), null)
+		return nums\n''')
 
-        outputFile.write('''\t}\n\n''')
+		outputFile.write('''\t}\n\n''')
 
 def generateProxyFiles(interfaceFunctions: dict):
-    for interaction in interactionList:
-        with open(f"{config['output_path']}ListCP{interaction}.dn", "w") as outputFile:
-            if interaction == "mixed_sharding":
-                writeHeader(outputFile, ["sharding", "alternate"])
-                for method in methodsWithImpact:
-                    writeFunction(outputFile, "sharding", interfaceFunctions[method], method)
-                for method in methodsWithoutImpact:
-                    writeFunction(outputFile, "alternate", interfaceFunctions[method], method)
-                writeFooter(outputFile, ["sharding", "alternate"])
+	for interaction in interactionList:
+		with open(f"{config['output_path']}ListCP{interaction}.dn", "w") as outputFile:
+			if interaction == MIXED_SHARDING:
+				writeHeader(outputFile, [SHARDING, ALTERNATE])
+				for method in methodsWithImpact:
+					writeFunction(outputFile, SHARDING, interfaceFunctions[method], method)
+				for method in methodsWithoutImpact:
+					writeFunction(outputFile, ALTERNATE, interfaceFunctions[method], method)
+				writeFooter(outputFile, [SHARDING, ALTERNATE])
 
-            elif interaction == "mixed_propagate":
-                writeHeader(outputFile, ["propagate", "alternate"])
-                for method in methodsWithImpact:
-                    writeFunction(outputFile, "propagate", interfaceFunctions[method], method)
-                for method in methodsWithoutImpact:
-                    writeFunction(outputFile, "alternate", interfaceFunctions[method], method)
-                writeFooter(outputFile, ["propagate", "alternate"])
+			elif interaction == MIXED_PROPAGATE:
+				writeHeader(outputFile, [PROPAGATE, ALTERNATE])
+				for method in methodsWithImpact:
+					writeFunction(outputFile, PROPAGATE, interfaceFunctions[method], method)
+				for method in methodsWithoutImpact:
+					writeFunction(outputFile, ALTERNATE, interfaceFunctions[method], method)
+				writeFooter(outputFile, [PROPAGATE, ALTERNATE])
 
-            else:
-                writeHeader(outputFile, [interaction])
-                for method in methodsWithImpact + methodsWithoutImpact:
-                    writeFunction(outputFile, interaction, interfaceFunctions[method], method)
-                writeFooter(outputFile, [interaction])
-
-            outputFile.close()
+			else:
+				writeHeader(outputFile, [interaction])
+				for method in methodsWithImpact + methodsWithoutImpact:
+					writeFunction(outputFile, interaction, interfaceFunctions[method], method)
+				writeFooter(outputFile, [interaction])
 
 interfaceFunctions = readInterfaceFile()
 generateProxyFiles(interfaceFunctions)
-
-configFile.close()
