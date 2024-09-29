@@ -1,7 +1,7 @@
 {
 	"interface_path": "./interface/List.dn",
 	"output_path": "./result/",
-	"relations": {
+	"methods": {
 		"add": {
 			"impact": "true",
 			"attrs": "content",
@@ -22,7 +22,9 @@
 			"impact": "false"
 		},
 		"update": {
-			"impact": "true"
+			"impact": "true",
+			"attrs": "content",
+			"attrs_type": "collection"
 		}
 	}
 }
