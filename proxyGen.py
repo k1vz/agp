@@ -4,18 +4,18 @@ import os, json, re
 try:
 	with open("config.json", "r") as configFile:
 		config = json.load(configFile)
-		
-		if not os.path.exists(config['output_path']): 
+
+		if not os.path.exists(config['output_path']):
 			os.makedirs(config['output_path'])
 except FileNotFoundError:
-    print("Error: The configuration file 'config.json' was not found.")
-    exit(1)
+	print("Error: The configuration file 'config.json' was not found.")
+	exit(1)
 except json.JSONDecodeError:
-    print("Error: There was an issue with decoding the JSON from 'config.json'.")
-    exit(1)
+	print("Error: There was an issue with decoding the JSON from 'config.json'.")
+	exit(1)
 except KeyError as e:
-    print(f"Error: Missing expected key in the configuration file: {e}")
-    exit(1)
+	print(f"Error: Missing expected key in the configuration file: {e}")
+	exit(1)
 
 methodsWithImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "true"]
 methodsWithoutImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "false"]
@@ -29,24 +29,23 @@ MIXED_PROPAGATE = "mixed_propagate"
 DATA_TYPES = ['void', 'int', 'Data', 'Data[]', 'bool']
 interactionList = [SHARDING, PROPAGATE, MIXED_SHARDING, MIXED_PROPAGATE]
 
-
 def cleanLine(line: str):
 	global insideMultilineComment
-	
+
 	if '/*' in line and '*/' in line:
 		return re.sub(r'/\*.*?\*/', '', line).strip()
-	
+
 	if '/*' in line:
 		insideMultilineComment = True
 		return re.sub(r'/\*.*', '', line).strip()
-	
+
 	if insideMultilineComment and '*/' in line:
 		insideMultilineComment = False
 		return re.sub(r'.*\*/', '', line).strip()
-	
+
 	if insideMultilineComment:
 		return
-	
+
 	return re.sub(r'//.*', '', line).strip()
 
 def readInterfaceFile():
@@ -57,7 +56,7 @@ def readInterfaceFile():
 	with open(config['interface_path'], 'r') as interfaceFile:
 		for line_raw in interfaceFile:
 			line = cleanLine(line_raw)
-			
+
 			if line:
 				wordList = line.split(' ')
 				if wordList[0] == 'interface':
@@ -125,10 +124,10 @@ const char LOCALHOST[] = "localhost"
 
 component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEncoder parser,
 	net.TCPSocket, data.StringUtil strUtil, io.Output out, data.IntUtil iu, ''')
-			
+
 	if (SHARDING in interactionMethods):
 		outputFile.write("hash.Multiplicative hash")
-	
+
 	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write("net.TCPServerSocket")
 
@@ -249,9 +248,9 @@ component provides List:heap(Destructor, AdaptEvents) requires data.json.JSONEnc
 		}
 	}
 	''')
-		
+
 	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
-		outputFile.write('''	  
+		outputFile.write('''
 	Response makeRequest(char content[]) {
 		setupRemoteListsIPs()
 		IPAddr addr = null
@@ -302,18 +301,18 @@ def writeFooter(outputFile:TextIOWrapper, interactionMethods: list[str]):
 			content = getContents()
 			char msg[] = new char[]("clearList!\\r\\r\\r\\r")
 			''')
-	
+
 	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write("sendMsgToRemoteDists(msg)")
 
 	elif (SHARDING in interactionMethods):
-	
+
 		outputFile.write('''
 			setupRemoteDistsIPs()
 			for (int i = 0; i < remoteDistsIps.arrayLength; i++) {
 				makeRequestSharding(remoteDistsIps[i], msg, true)
 			}''')
-		
+
 	outputFile.write('''
 		}
 	}
@@ -321,7 +320,7 @@ def writeFooter(outputFile:TextIOWrapper, interactionMethods: list[str]):
 	// this is extremely hardcoded! ):
 	void AdaptEvents:active() {
 		if (content != null) {''')
-	
+
 	if (PROPAGATE in interactionMethods or ALTERNATE in interactionMethods):
 		outputFile.write('''
 			char state[] = parser.jsonFromArray(content, null)
