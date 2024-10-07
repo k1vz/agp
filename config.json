@@ -3,28 +3,28 @@
 	"output_path": "./result/",
 	"methods": {
 		"add": {
-			"impact": "true",
-			"attrs": "content",
-			"attrs_type": "collection"
+			"impact": true,
+			"attrs": ["content"],
+			"attrs_type": ["collection"]
 		},
 		"remove": {
-			"impact": "true",
-			"attrs": "content",
-			"attrs_type": "collection"
+			"impact": true,
+			"attrs": ["content"],
+			"attrs_type": ["collection"]
 		},
 		"getFirst": {
-			"impact": "false"
+			"impact": false
 		},
 		"getLength": {
-			"impact": "false"
+			"impact": false
 		},
 		"getContents": {
-			"impact": "false"
+			"impact": false
 		},
 		"update": {
-			"impact": "true",
-			"attrs": "content",
-			"attrs_type": "collection"
+			"impact": true,
+			"attrs": ["content"],
+			"attrs_type": ["collection"]
 		}
 	}
 }

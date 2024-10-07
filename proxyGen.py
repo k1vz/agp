@@ -17,8 +17,8 @@ except KeyError as e:
 	print(f"Error: Missing expected key in the configuration file: {e}")
 	exit(1)
 
-methodsWithImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "true"]
-methodsWithoutImpact = [method for method, methodData in config['methods'].items() if methodData['impact'] == "false"]
+methodsWithImpact = [method for method, methodData in config['methods'].items() if methodData['impact']]
+methodsWithoutImpact = [method for method, methodData in config['methods'].items() if not methodData['impact']]
 
 insideMultilineComment = False
 SHARDING = "sharding"
@@ -48,34 +48,32 @@ def cleanLine(line: str):
 
 	return re.sub(r'//.*', '', line).strip()
 
-def readInterfaceFile():
+def readInterfaceFile(interfaceFile: TextIOWrapper):
 	interfaceFunctions = {}
-	dataTypes = ['void', 'int', 'Data', 'Data[]', 'bool']
 	interfaceName = ''
 
-	with open(config['interface_path'], 'r') as interfaceFile:
-		for line_raw in interfaceFile:
-			line = cleanLine(line_raw)
+	for line_raw in interfaceFile:
+		line = cleanLine(line_raw)
 
-			if line:
-				wordList = line.split(' ')
-				if wordList[0] == 'interface':
-					interfaceName = wordList[1]
-				elif wordList[0] in dataTypes:
-					returnType = wordList[0]
-					methodName = wordList[1]
+		if line:
+			wordList = line.split(' ')
+			if wordList[0] == 'interface':
+				interfaceName = wordList[1]
+			elif wordList[0] in DATA_TYPES:
+				returnType = wordList[0]
+				methodName = wordList[1]
 
-					parameterList = line[line.find('(') + 1:line.rfind(')')].split(',')
-					parameterList = [param.strip() for param in parameterList if param.strip()]
+				parameterList = line[line.find('(') + 1:line.rfind(')')].split(',')
+				parameterList = [param.strip() for param in parameterList if param.strip()]
 
-					numParam = len([param for param in parameterList if not param.startswith("opt")])
+				numParam = len([param for param in parameterList if not param.startswith("opt")])
 
-					interfaceFunctions[methodName] = {
-						"returnType": returnType,
-						"interfaceName": interfaceName,
-						"parameterList": parameterList,
-						"numParam": numParam
-					}
+				interfaceFunctions[methodName] = {
+					"returnType": returnType,
+					"interfaceName": interfaceName,
+					"parameterList": parameterList,
+					"numParam": numParam
+				}
 
 	return interfaceFunctions
 
@@ -456,5 +454,6 @@ def generateProxyFiles(interfaceFunctions: dict):
 					writeFunction(outputFile, interaction, interfaceFunctions[method], method)
 				writeFooter(outputFile, [interaction])
 
-interfaceFunctions = readInterfaceFile()
+with open(config['interface_path'], 'r') as interfaceFile:
+	interfaceFunctions = readInterfaceFile(interfaceFile)
 generateProxyFiles(interfaceFunctions)
